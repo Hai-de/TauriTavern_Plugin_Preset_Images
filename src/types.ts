@@ -8,16 +8,26 @@ export interface PresetImage {
     mime?: string;
     bytes?: number;
     detail?: ImageDetail;
+}
+
+export interface LegacyPresetImage extends PresetImage {
     position?: ImagePosition;
 }
 
+export interface PresetPromptImageLayout {
+    before: PresetImage[];
+    after: PresetImage[];
+}
+
 export interface PresetPromptImagesStore {
-    version: 1;
-    items: Record<string, PresetImage[]>;
+    version: 2;
+    items: Record<string, PresetPromptImageLayout>;
 }
 
 export interface PluginSettings {
     enabled: boolean;
+    showPositionSelect: boolean;
+    showMoveButtons: boolean;
     warnMaxImageMiB: number;
     warnMaxImagesPerPrompt: number;
     warnMaxTotalMiB: number;
@@ -30,8 +40,10 @@ export interface RuntimeContext {
     getPresetManager?: (apiId?: string) => any;
     saveSettingsDebounced?: () => void;
     saveSettings?: () => Promise<void>;
+    chatCompletionSettings?: Record<string, any>;
     Popup?: any;
-    t?: (text: string, ...args: any[]) => string;
+    t?: any;
+    translate?: (text: string, key?: string | null) => string;
     [key: string]: any;
 }
 

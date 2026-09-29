@@ -1,23 +1,26 @@
-import { checkImageLimits, createImageId, createStore, estimateDataUrlBytes, fileToDataUrl, getImages, readStore, setImages } from '../storage.js';
+import { collectImageLimitWarnings, createImageId, estimateDataUrlBytes, fileToDataUrl, getLayout, readStore, setLayout, } from '../storage.js';
 import { loadPluginSettings } from '../settings.js';
-import { getRuntimeContext, toastError, toastWarning } from '../runtime.js';
+import { t, translateText, toastError, toastWarning } from '../runtime.js';
 import { persistStore } from '../persistence.js';
 let currentPromptManager = null;
 let currentPrompt = null;
 let editorShell = null;
-let fileInput = null;
-let dropZone = null;
-let imageList = null;
-let noticeElement = null;
+let dragImageId = null;
+let currentPromptEligible = false;
 function getPromptIdentifier() {
     return String(currentPrompt?.identifier ?? '');
+}
+function getServiceSettings() {
+    return currentPromptManager?.serviceSettings;
 }
 function isEligiblePrompt(prompt) {
     if (!prompt || prompt.marker === true) {
         return false;
     }
-    const position = Number(prompt.injection_position ?? 0);
-    return position === 0;
+    return Number(prompt.injection_position ?? 0) === 0;
+}
+function getLayoutState() {
+    return getLayout(getServiceSettings(), getPromptIdentifier());
 }
 function ensureEditorShell() {
     if (editorShell?.isConnected) {
@@ -48,21 +51,39 @@ function buildEditorHeader(eligible) {
     const header = document.createElement('div');
     header.className = 'tt-preset-image-editor__header';
     const title = document.createElement('b');
-    title.textContent = 'Prompt Images';
+    title.textContent = translateText('Prompt Images');
     header.append(title);
     const hint = document.createElement('span');
     hint.className = 'tt-preset-image-editor__hint';
     hint.textContent = eligible
-        ? 'Drag, paste, or select images. They are embedded into the preset JSON.'
-        : 'Only non-marker Relative prompts can send images. Existing data is kept but will not be sent.';
+        ? translateText('Drag, paste, or select images. They are embedded into the preset JSON.')
+        : translateText('Only non-marker Relative prompts can send images. Existing data is kept but will not be sent.');
     header.append(hint);
     return header;
+}
+function buildTextAnchor(content) {
+    const anchor = document.createElement('div');
+    anchor.className = 'tt-preset-image-text-anchor';
+    anchor.dataset.dropTarget = 'text';
+    const label = document.createElement('div');
+    label.className = 'tt-preset-image-text-anchor__label';
+    label.textContent = translateText('Prompt Text');
+    anchor.append(label);
+    const preview = document.createElement('div');
+    preview.className = 'tt-preset-image-text-anchor__preview';
+    preview.textContent = content.trim().length > 0
+        ? content.replace(/\s+/g, ' ').slice(0, 240)
+        : translateText('Prompt text is empty');
+    anchor.append(preview);
+    return anchor;
 }
 function buildDropZone(eligible) {
     const zone = document.createElement('div');
     zone.id = 'tt-preset-image-dropzone';
     zone.className = 'tt-preset-image-editor__dropzone';
-    zone.textContent = eligible ? 'Drop / paste / click to add images' : 'Image upload disabled for this prompt type';
+    zone.textContent = eligible
+        ? translateText('Drop / paste / click to add images')
+        : translateText('Image upload disabled for this prompt type');
     if (eligible) {
         zone.tabIndex = 0;
     }
@@ -71,19 +92,167 @@ function buildDropZone(eligible) {
     }
     return zone;
 }
-function buildFileInput() {
+function buildAddRow(eligible) {
+    const row = document.createElement('div');
+    row.className = 'tt-preset-image-editor__add-row';
+    row.append(buildDropZone(eligible));
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'menu_button tt-preset-image-editor__add-button';
+    addButton.textContent = translateText('Add images');
+    addButton.disabled = !eligible;
+    row.append(addButton);
     const input = document.createElement('input');
     input.id = 'tt-preset-image-file';
     input.type = 'file';
     input.accept = 'image/*';
     input.multiple = true;
     input.hidden = true;
+    row.append(input);
+    if (eligible) {
+        addButton.addEventListener('click', () => input.click());
+        input.addEventListener('change', () => {
+            const files = Array.from(input.files ?? []);
+            input.value = '';
+            void addFiles(files);
+        });
+    }
+    return row;
+}
+function makeImagePart(image) {
+    return {
+        type: 'image_url',
+        image_url: {
+            url: image.dataUrl,
+            ...(image.detail ? { detail: image.detail } : {}),
+        },
+    };
+}
+function findImage(layout, imageId) {
+    for (const bucket of ['before', 'after']) {
+        const index = layout[bucket].findIndex(image => image.id === imageId);
+        if (index !== -1) {
+            return { bucket, index, image: layout[bucket][index] };
+        }
+    }
+    return null;
+}
+function insertImage(layout, bucket, index, image) {
+    const safeIndex = Math.max(0, Math.min(index, layout[bucket].length));
+    layout[bucket].splice(safeIndex, 0, image);
+}
+function moveImage(layout, imageId, targetBucket, targetIndex) {
+    const found = findImage(layout, imageId);
+    if (!found) {
+        return false;
+    }
+    layout[found.bucket].splice(found.index, 1);
+    let index = targetIndex;
+    if (found.bucket === targetBucket && found.index < targetIndex) {
+        index -= 1;
+    }
+    insertImage(layout, targetBucket, index, found.image);
+    return true;
+}
+function moveImageToBucketTail(layout, imageId, bucket) {
+    return moveImage(layout, imageId, bucket, layout[bucket].length);
+}
+function moveWithinBucket(layout, bucket, imageId, delta) {
+    const index = layout[bucket].findIndex(image => image.id === imageId);
+    const next = index + delta;
+    if (index === -1 || next < 0 || next >= layout[bucket].length) {
+        return false;
+    }
+    const [image] = layout[bucket].splice(index, 1);
+    if (image) {
+        layout[bucket].splice(next, 0, image);
+    }
+    return true;
+}
+function commitLayout(layout) {
+    if (!currentPromptManager) {
+        return;
+    }
+    const settings = currentPromptManager.serviceSettings;
+    const identifier = getPromptIdentifier();
+    const store = setLayout(settings, identifier, layout);
+    warnAboutLimits(store);
+    void persistStore(settings, store);
+    dragImageId = null;
+    renderEditor();
+}
+function removeImage(imageId) {
+    const layout = getLayoutState();
+    const found = findImage(layout, imageId);
+    if (!found) {
+        return;
+    }
+    layout[found.bucket].splice(found.index, 1);
+    commitLayout(layout);
+}
+function replaceImage(bucket, imageId, file) {
+    void fileToDataUrl(file)
+        .then(dataUrl => {
+        const layout = getLayoutState();
+        const found = findImage(layout, imageId);
+        if (!found) {
+            return;
+        }
+        const replacement = {
+            id: found.image.id,
+            dataUrl,
+            name: file.name,
+            mime: file.type,
+            bytes: file.size,
+            detail: found.image.detail ?? 'auto',
+        };
+        layout[found.bucket][found.index] = replacement;
+        commitLayout(layout);
+    })
+        .catch(error => {
+        console.error('[Preset Prompt Images] Failed to replace image file.', error);
+        toastError(t `Could not read image file: ${file.name}`);
+    });
+}
+function updateImageDetail(imageId, detail) {
+    const layout = getLayoutState();
+    const found = findImage(layout, imageId);
+    if (!found) {
+        return;
+    }
+    found.image.detail = detail;
+    commitLayout(layout);
+}
+function updateImagePosition(imageId, targetBucket) {
+    const layout = getLayoutState();
+    const found = findImage(layout, imageId);
+    if (!found || found.bucket === targetBucket) {
+        return;
+    }
+    moveImageToBucketTail(layout, imageId, targetBucket);
+    commitLayout(layout);
+}
+function buildReplaceInput(bucket, image) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.hidden = true;
+    input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        input.value = '';
+        if (file) {
+            replaceImage(bucket, image.id, file);
+        }
+    });
     return input;
 }
-function buildImageCard(image) {
+function buildImageCard(image, bucket, index) {
+    const settings = loadPluginSettings();
     const card = document.createElement('div');
     card.className = 'tt-preset-image-card';
     card.dataset.imageId = image.id;
+    card.dataset.bucket = bucket;
+    card.dataset.index = String(index);
     const preview = document.createElement('img');
     preview.className = 'tt-preset-image-card__preview';
     preview.src = image.dataUrl;
@@ -102,23 +271,11 @@ function buildImageCard(image) {
     size.className = 'tt-preset-image-card__size';
     size.textContent = `${(bytes / 1024).toFixed(1)} KiB`;
     meta.append(size);
-    const position = document.createElement('select');
-    position.className = 'text_pole tt-preset-image-card__select';
-    position.title = 'Insert position';
-    for (const value of ['before', 'after']) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = value === 'before' ? 'Before text' : 'After text';
-        option.selected = (image.position ?? 'after') === value;
-        position.append(option);
-    }
-    position.addEventListener('change', () => {
-        updateImage(image.id, { position: position.value });
-    });
-    meta.append(position);
+    const actions = document.createElement('div');
+    actions.className = 'tt-preset-image-card__actions';
     const detail = document.createElement('select');
     detail.className = 'text_pole tt-preset-image-card__select';
-    detail.title = 'Image detail';
+    detail.title = translateText('Image detail');
     for (const value of ['auto', 'low', 'high', 'original']) {
         const option = document.createElement('option');
         option.value = value;
@@ -126,38 +283,253 @@ function buildImageCard(image) {
         option.selected = (image.detail ?? 'auto') === value;
         detail.append(option);
     }
-    detail.addEventListener('change', () => {
-        updateImage(image.id, { detail: detail.value });
-    });
-    meta.append(detail);
+    detail.addEventListener('change', () => updateImageDetail(image.id, detail.value));
+    actions.append(detail);
+    if (settings.showPositionSelect) {
+        const position = document.createElement('select');
+        position.className = 'text_pole tt-preset-image-card__select';
+        position.title = translateText('Insert position');
+        for (const value of ['before', 'after']) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = translateText(value === 'before' ? 'Before text' : 'After text');
+            option.selected = bucket === value;
+            position.append(option);
+        }
+        position.addEventListener('change', () => updateImagePosition(image.id, position.value));
+        actions.append(position);
+    }
+    if (settings.showMoveButtons) {
+        const moveBy = (delta) => {
+            const layout = getLayoutState();
+            const current = findImage(layout, image.id);
+            if (!current) {
+                return;
+            }
+            if (current.bucket === 'before' && delta === 1 && current.index === layout.before.length - 1) {
+                const [moved] = layout.before.splice(current.index, 1);
+                if (moved) {
+                    layout.after.unshift(moved);
+                }
+            }
+            else if (current.bucket === 'after' && delta === -1 && current.index === 0) {
+                const [moved] = layout.after.splice(0, 1);
+                if (moved) {
+                    layout.before.push(moved);
+                }
+            }
+            else if (!moveWithinBucket(layout, current.bucket, image.id, delta)) {
+                return;
+            }
+            commitLayout(layout);
+        };
+        const up = document.createElement('button');
+        up.type = 'button';
+        up.className = 'menu_button tt-preset-image-card__icon-button';
+        up.textContent = '↑';
+        up.title = translateText('Move up');
+        up.disabled = bucket === 'before' && index === 0;
+        up.addEventListener('click', () => moveBy(-1));
+        actions.append(up);
+        const down = document.createElement('button');
+        down.type = 'button';
+        down.className = 'menu_button tt-preset-image-card__icon-button';
+        down.textContent = '↓';
+        down.title = translateText('Move down');
+        down.disabled = bucket === 'after' && index === getLayoutState()[bucket].length - 1;
+        down.addEventListener('click', () => moveBy(1));
+        actions.append(down);
+    }
+    const replace = document.createElement('button');
+    replace.type = 'button';
+    replace.className = 'menu_button tt-preset-image-card__action';
+    replace.textContent = translateText('Replace');
+    replace.addEventListener('click', () => replaceInput.click());
+    actions.append(replace);
     const remove = document.createElement('button');
     remove.type = 'button';
-    remove.className = 'menu_button tt-preset-image-card__remove';
-    remove.textContent = 'Remove';
-    remove.addEventListener('click', () => {
-        removeImage(image.id);
-    });
-    meta.append(remove);
+    remove.className = 'menu_button tt-preset-image-card__action danger';
+    remove.textContent = translateText('Remove');
+    remove.addEventListener('click', () => removeImage(image.id));
+    actions.append(remove);
+    const replaceInput = buildReplaceInput(bucket, image);
+    actions.append(replaceInput);
+    meta.append(actions);
     card.append(meta);
+    const dragHandle = document.createElement('div');
+    dragHandle.className = 'tt-preset-image-card__drag-handle';
+    dragHandle.draggable = true;
+    dragHandle.title = translateText('Drag to reorder');
+    dragHandle.textContent = '☰';
+    dragHandle.addEventListener('dragstart', event => {
+        dragImageId = image.id;
+        card.classList.add('dragging');
+        event.dataTransfer?.setData('text/plain', image.id);
+        if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+        }
+    });
+    dragHandle.addEventListener('dragend', () => {
+        dragImageId = null;
+        card.classList.remove('dragging');
+        clearDropIndicators();
+    });
+    card.append(dragHandle);
+    card.addEventListener('dragover', event => {
+        if (!dragImageId || dragImageId === image.id) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = card.getBoundingClientRect();
+        const before = event.clientY < rect.top + rect.height / 2;
+        clearDropIndicators();
+        card.classList.add(before ? 'drop-before' : 'drop-after');
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('drop-before', 'drop-after'));
+    card.addEventListener('drop', event => {
+        if (!dragImageId || dragImageId === image.id) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = card.getBoundingClientRect();
+        const before = event.clientY < rect.top + rect.height / 2;
+        const layout = getLayoutState();
+        if (moveImage(layout, dragImageId, bucket, index + (before ? 0 : 1))) {
+            commitLayout(layout);
+        }
+        else {
+            clearDropIndicators();
+        }
+    });
     return card;
 }
-function renderImageList(eligible) {
-    if (!imageList || !currentPromptManager) {
+function clearDropIndicators() {
+    document.querySelectorAll('.drop-before, .drop-after, .drag-over').forEach(element => {
+        element.classList.remove('drop-before', 'drop-after', 'drag-over');
+    });
+}
+function appendFileToBucket(files, bucket) {
+    if (!currentPromptEligible) {
+        toastWarning(translateText('Only non-marker Relative prompts can send images. Existing data is kept but will not be sent.'));
         return;
     }
-    clearChildren(imageList);
-    const settings = currentPromptManager.serviceSettings;
-    const identifier = getPromptIdentifier();
-    const images = getImages(settings, identifier);
+    const layout = getLayoutState();
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    if (!imageFiles.length) {
+        toastWarning(translateText('Only image files are supported.'));
+        return;
+    }
+    void Promise.all(imageFiles.map(async (file) => {
+        const dataUrl = await fileToDataUrl(file);
+        return {
+            id: createImageId(),
+            dataUrl,
+            name: file.name,
+            mime: file.type,
+            bytes: file.size,
+            detail: 'auto',
+        };
+    })).then(images => {
+        layout[bucket].push(...images);
+        commitLayout(layout);
+    }).catch(error => {
+        console.error('[Preset Prompt Images] Failed to read one or more image files.', error);
+        toastError(translateText('Could not read one or more image files.'));
+    });
+}
+function addFiles(files) {
+    appendFileToBucket(files, 'after');
+}
+function buildBucket(bucket, images) {
+    const element = document.createElement('div');
+    element.className = `tt-preset-image-bucket tt-preset-image-bucket--${bucket}`;
+    element.dataset.bucket = bucket;
     if (!images.length) {
         const empty = document.createElement('div');
-        empty.className = 'tt-preset-image-editor__empty';
-        empty.textContent = eligible ? 'No images attached to this prompt.' : 'No image data for this prompt.';
-        imageList.append(empty);
-        return;
+        empty.className = 'tt-preset-image-bucket__empty';
+        empty.textContent = translateText('Drop an image here');
+        element.append(empty);
     }
-    for (const image of images) {
-        imageList.append(buildImageCard(image));
+    else {
+        images.forEach((image, index) => element.append(buildImageCard(image, bucket, index)));
+    }
+    element.addEventListener('dragover', event => {
+        const hasFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+        if (!dragImageId && !hasFiles) {
+            return;
+        }
+        event.preventDefault();
+        element.classList.add('drag-over');
+    });
+    element.addEventListener('dragleave', () => element.classList.remove('drag-over'));
+    element.addEventListener('drop', event => {
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (!dragImageId && !files.length) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        element.classList.remove('drag-over');
+        if (dragImageId) {
+            const layout = getLayoutState();
+            if (moveImageToBucketTail(layout, dragImageId, bucket)) {
+                commitLayout(layout);
+            }
+            else {
+                clearDropIndicators();
+            }
+            return;
+        }
+        appendFileToBucket(files, bucket);
+    });
+    return element;
+}
+function buildTextAnchorDropTarget(anchor, layout) {
+    anchor.addEventListener('dragover', event => {
+        if (!dragImageId) {
+            return;
+        }
+        event.preventDefault();
+        const rect = anchor.getBoundingClientRect();
+        const before = event.clientY < rect.top + rect.height / 2;
+        clearDropIndicators();
+        anchor.classList.add(before ? 'drop-before' : 'drop-after');
+    });
+    anchor.addEventListener('dragleave', () => anchor.classList.remove('drop-before', 'drop-after'));
+    anchor.addEventListener('drop', event => {
+        if (!dragImageId) {
+            return;
+        }
+        event.preventDefault();
+        const rect = anchor.getBoundingClientRect();
+        const before = event.clientY < rect.top + rect.height / 2;
+        const current = getLayoutState();
+        const targetBucket = before ? 'before' : 'after';
+        const targetIndex = before ? current.before.length : 0;
+        if (moveImage(current, dragImageId, targetBucket, targetIndex)) {
+            commitLayout(current);
+        }
+        else {
+            clearDropIndicators();
+        }
+    });
+}
+function warnAboutLimits(store = currentPromptManager ? readStore(currentPromptManager.serviceSettings) : { version: 2, items: {} }) {
+    const settings = loadPluginSettings();
+    const warnings = collectImageLimitWarnings(store, settings);
+    for (const warning of warnings) {
+        if (warning.kind === 'image' && warning.image) {
+            const bytes = warning.bytes ?? 0;
+            toastWarning(t `Image "${warning.image.name ?? warning.image.id}" for prompt ${warning.identifier ?? ''} is ${(bytes / (1024 * 1024)).toFixed(2)} MiB.`);
+        }
+        else if (warning.kind === 'prompt') {
+            toastWarning(t `Prompt ${warning.identifier ?? ''} has ${warning.count ?? 0} images.`);
+        }
+        else if (warning.kind === 'total') {
+            toastWarning(t `Preset prompt images total ${((warning.total ?? 0) / (1024 * 1024)).toFixed(2)} MiB.`);
+        }
     }
 }
 function renderEditor() {
@@ -172,108 +544,37 @@ function renderEditor() {
     }
     const sourcePrompt = currentPromptManager.getPromptById(identifier) ?? currentPrompt;
     const eligible = isEligiblePrompt(sourcePrompt);
+    currentPromptEligible = eligible;
+    const layout = getLayoutState();
+    const promptContent = String(sourcePrompt?.content ?? '');
     clearChildren(shell);
     shell.hidden = false;
     shell.append(buildEditorHeader(eligible));
-    shell.append(buildDropZone(eligible));
-    shell.append(buildFileInput());
-    noticeElement = document.createElement('div');
-    noticeElement.className = 'tt-preset-image-editor__notice';
-    shell.append(noticeElement);
-    imageList = document.createElement('div');
-    imageList.className = 'tt-preset-image-editor__list';
-    shell.append(imageList);
-    dropZone = shell.querySelector('#tt-preset-image-dropzone');
-    fileInput = shell.querySelector('#tt-preset-image-file');
-    if (eligible && dropZone && fileInput) {
-        dropZone.addEventListener('click', () => fileInput?.click());
+    shell.append(buildAddRow(eligible));
+    const list = document.createElement('div');
+    list.className = 'tt-preset-image-editor__list';
+    const beforeBucket = buildBucket('before', layout.before);
+    const textAnchor = buildTextAnchor(promptContent);
+    buildTextAnchorDropTarget(textAnchor, layout);
+    const afterBucket = buildBucket('after', layout.after);
+    list.append(beforeBucket, textAnchor, afterBucket);
+    shell.append(list);
+    const addRow = shell.querySelector('.tt-preset-image-editor__add-row');
+    const dropZone = addRow?.querySelector('#tt-preset-image-dropzone');
+    if (eligible && dropZone) {
+        dropZone.addEventListener('click', () => {
+            (addRow?.querySelector('#tt-preset-image-file'))?.click();
+        });
         dropZone.addEventListener('dragover', event => {
             event.preventDefault();
-            dropZone?.classList.add('drag-over');
+            dropZone.classList.add('drag-over');
         });
-        dropZone.addEventListener('dragleave', () => {
-            dropZone?.classList.remove('drag-over');
-        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
         dropZone.addEventListener('drop', event => {
             event.preventDefault();
-            dropZone?.classList.remove('drag-over');
-            void addFiles(Array.from(event.dataTransfer?.files ?? []));
+            dropZone.classList.remove('drag-over');
+            appendFileToBucket(Array.from(event.dataTransfer?.files ?? []), 'after');
         });
-        fileInput.addEventListener('change', () => {
-            const files = Array.from(fileInput?.files ?? []);
-            fileInput.value = '';
-            void addFiles(files);
-        });
-    }
-    renderImageList(eligible);
-}
-function updateImage(imageId, patch) {
-    if (!currentPromptManager) {
-        return;
-    }
-    const settings = currentPromptManager.serviceSettings;
-    const identifier = getPromptIdentifier();
-    const images = getImages(settings, identifier).map(image => (image.id === imageId ? { ...image, ...patch } : image));
-    const store = setImages(settings, identifier, images);
-    warnAboutLimits(store);
-    void persistStore(settings, store);
-    renderEditor();
-}
-function removeImage(imageId) {
-    if (!currentPromptManager) {
-        return;
-    }
-    const settings = currentPromptManager.serviceSettings;
-    const identifier = getPromptIdentifier();
-    const images = getImages(settings, identifier).filter(image => image.id !== imageId);
-    const store = setImages(settings, identifier, images);
-    void persistStore(settings, store);
-    renderEditor();
-}
-async function addFiles(files) {
-    if (!currentPromptManager) {
-        return;
-    }
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    if (!imageFiles.length) {
-        toastWarning('Only image files are supported.');
-        return;
-    }
-    const settings = currentPromptManager.serviceSettings;
-    const identifier = getPromptIdentifier();
-    const existing = getImages(settings, identifier);
-    const added = [];
-    for (const file of imageFiles) {
-        try {
-            const dataUrl = await fileToDataUrl(file);
-            added.push({
-                id: createImageId(),
-                dataUrl,
-                name: file.name,
-                mime: file.type,
-                bytes: file.size,
-                detail: 'auto',
-                position: 'after',
-            });
-        }
-        catch (error) {
-            console.error('[Preset Prompt Images] Failed to read image file.', error);
-            toastError(`Could not read image file: ${file.name}`);
-        }
-    }
-    if (!added.length) {
-        return;
-    }
-    const store = setImages(settings, identifier, [...existing, ...added]);
-    warnAboutLimits(store);
-    await persistStore(settings, store);
-    renderEditor();
-}
-function warnAboutLimits(store = currentPromptManager ? readStore(currentPromptManager.serviceSettings) : createStore()) {
-    const pluginSettings = loadPluginSettings(getRuntimeContext());
-    const warnings = checkImageLimits(currentPromptManager?.serviceSettings, store, pluginSettings);
-    for (const warning of warnings) {
-        toastWarning(warning);
     }
 }
 export function renderPromptImageEditor(promptManager, prompt) {
@@ -283,9 +584,7 @@ export function renderPromptImageEditor(promptManager, prompt) {
 }
 export function installPromptImageEditor() {
     document.addEventListener('paste', event => {
-        const shell = editorShell;
-        const popup = document.getElementById('completion_prompt_manager_popup_edit');
-        if (!shell || !popup || getComputedStyle(popup).display === 'none') {
+        if (!editorShell || editorShell.offsetParent === null) {
             return;
         }
         const files = Array.from(event.clipboardData?.items ?? [])
@@ -294,7 +593,7 @@ export function installPromptImageEditor() {
             .filter((file) => file !== null);
         if (files.length) {
             event.preventDefault();
-            void addFiles(files);
+            appendFileToBucket(files, 'after');
         }
     });
 }

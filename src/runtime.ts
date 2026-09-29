@@ -19,6 +19,31 @@ export function saveExtensionSettings(context: RuntimeContext = getRuntimeContex
     context.saveSettingsDebounced?.();
 }
 
+
+export function translateText(text: string): string {
+    try {
+        return getRuntimeContext().translate?.(text) ?? text;
+    } catch {
+        return text;
+    }
+}
+
+export function t(strings: TemplateStringsArray, ...values: any[]): string {
+    try {
+        const context = getRuntimeContext();
+        if (typeof context.t === 'function') {
+            return context.t(strings, ...values);
+        }
+    } catch {
+        // Fall through to the plain template reconstruction.
+    }
+
+    return strings.reduce((result, part, index) => {
+        const value = values[index];
+        return result + part + (value !== undefined ? String(value) : '');
+    }, '');
+}
+
 export function toastWarning(message: string): void {
     if (typeof toastr !== 'undefined') {
         toastr.warning(message, 'Preset Prompt Images');

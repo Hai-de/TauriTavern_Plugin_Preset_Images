@@ -8,5 +8,12 @@
     "author": "TauriTavern",
     "version": "0.1.0",
     "description": "Attach multimodal images to Chat Completion preset prompts.",
-    "homePage": "https://github.com/Darkatse/TauriTavern"
+    "homePage": "https://github.com/Darkatse/TauriTavern",
+    "i18n": {
+        "en": "i18n/en.json",
+        "zh-cn": "i18n/zh-cn.json",
+        "zh-tw": "i18n/zh-tw.json",
+        "ja-jp": "i18n/ja-jp.json",
+        "default": "i18n/en.json"
+    }
 }

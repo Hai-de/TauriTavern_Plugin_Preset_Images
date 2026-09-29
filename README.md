@@ -12,8 +12,12 @@ extensions.tauritavern.presetPromptImages
 
 - 给 Relative 提示词条目添加图片。
 - 支持拖拽、粘贴和文件选择。
-- 支持图片 `before` / `after` 文本顺序。
-- 支持 `detail: auto / low / high / original`。
+- 通过“图片块 + 提示词文本锚点 + 图片块”的可排序列表管理图片和文本的位置关系。
+- 支持拖动排序，图片可位于提示词文本之前或之后。
+- 支持拖拽、粘贴和文件选择添加图片。
+- 支持单文件替换、删除、`detail: auto / low / high / original`。
+- 支持简体中文、繁体中文、日语和英语 UI。
+- 可选显示位置下拉框和上移/下移按钮。
 - 支持完整预设 JSON 导入导出时保留图片。
 - 插件总开关关闭后不发送任何图片。
 - 没有安装插件时，预设仍可按纯文本方式正常导入和使用。
@@ -70,6 +74,7 @@ Plugin_Preset_Images/
 ├── tsconfig.json
 ├── dist/
 ├── docs/
+├── i18n/
 ├── sample/
 └── src/
 ```

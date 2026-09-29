@@ -1,5 +1,5 @@
 import { STORE_FIELD, STORE_NAMESPACE } from './constants.js';
-import { toastError } from './runtime.js';
+import { translateText, toastError } from './runtime.js';
 import { getRuntimeContext } from './runtime.js';
 import { writeStore } from './storage.js';
 let persistChain = Promise.resolve();
@@ -23,7 +23,7 @@ export function persistStore(settings, store) {
     })
         .catch(error => {
         console.error('[Preset Prompt Images] Failed to persist preset image data.', error);
-        toastError('Failed to save preset image data. Check console for details.');
+        toastError(translateText('Failed to save preset image data. Check console for details.'));
     });
     return persistChain;
 }

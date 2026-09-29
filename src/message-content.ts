@@ -1,4 +1,4 @@
-import type { PresetImage } from './types.js';
+import type { PresetImage, PresetPromptImageLayout } from './types.js';
 
 function toParts(content: any): any[] {
     if (Array.isArray(content)) {
@@ -11,33 +11,31 @@ function toParts(content: any): any[] {
 }
 
 function imagePart(image: PresetImage): any {
-    const url = image.dataUrl;
-    const detail = image.detail ?? 'auto';
     return {
         type: 'image_url',
         image_url: {
-            url,
-            ...(detail ? { detail } : {}),
+            url: image.dataUrl,
+            ...(image.detail ? { detail: image.detail } : {}),
         },
     };
 }
 
-export async function appendPresetImages(message: any, images: PresetImage[]): Promise<void> {
-    if (!message || !Array.isArray(images) || images.length === 0) {
+export async function appendPresetImageLayout(message: any, layout: PresetPromptImageLayout): Promise<void> {
+    const beforeImages = Array.isArray(layout?.before) ? layout.before : [];
+    const afterImages = Array.isArray(layout?.after) ? layout.after : [];
+    if (!message || (!beforeImages.length && !afterImages.length)) {
         return;
     }
 
-    const beforeImages = images.filter(image => (image.position ?? 'after') === 'before');
-    const afterImages = images.filter(image => (image.position ?? 'after') === 'after');
-
     const existing = toParts(message.content);
-    const before = beforeImages.map(imagePart);
-    const after = afterImages.map(imagePart);
-
-    message.content = [...before, ...existing, ...after];
+    message.content = [
+        ...beforeImages.map(imagePart),
+        ...existing,
+        ...afterImages.map(imagePart),
+    ];
 
     let imageTokens = 0;
-    for (const image of images) {
+    for (const image of [...beforeImages, ...afterImages]) {
         try {
             imageTokens += await message.getImageTokenCost(image.dataUrl, image.detail ?? 'auto');
         } catch (error) {

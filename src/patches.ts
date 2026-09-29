@@ -1,8 +1,8 @@
-import { appendPresetImages } from './message-content.js';
+import { appendPresetImageLayout } from './message-content.js';
 import { installMultimodalSquashPatch } from './squash.js';
-import { getAllImageIdentifiers, getImages, hasAnyImages } from './storage.js';
+import { getAllImageIdentifiers, getLayout, hasAnyImages } from './storage.js';
 import { loadPluginSettings } from './settings.js';
-import { getRuntimeContext, toastError, toastWarning } from './runtime.js';
+import { getRuntimeContext, t, translateText, toastError, toastWarning } from './runtime.js';
 import { renderPromptImageEditor } from './ui/editor.js';
 
 let installed = false;
@@ -28,9 +28,9 @@ function installPreparePromptPatch(PromptManager: any): void {
             if (pluginSettings.enabled && prepared?.identifier) {
                 const source = this?.serviceSettings?.prompts?.find?.((item: any) => item?.identifier === prepared.identifier) ?? prompt;
                 if (isEligiblePrompt(source)) {
-                    const images = getImages(this.serviceSettings, prepared.identifier);
-                    if (images.length > 0) {
-                        prepared.presetPromptImages = images;
+                    const layout = getLayout(this.serviceSettings, prepared.identifier);
+                    if (layout.before.length + layout.after.length > 0) {
+                        prepared.presetPromptImageLayout = layout;
                     }
                 }
             }
@@ -50,17 +50,17 @@ function installMessageFromPromptPatch(Message: any): void {
 
     Message.fromPromptAsync = async function patchedFromPromptAsync(prompt: any, tokenHandler?: any): Promise<any> {
         const message = await original.call(this, prompt, tokenHandler);
-        const images = Array.isArray(prompt?.presetPromptImages) ? prompt.presetPromptImages : [];
-        if (images.length > 0) {
+        const layout = prompt?.presetPromptImageLayout;
+        if (layout?.before?.length || layout?.after?.length) {
             try {
                 if (loadPluginSettings(getRuntimeContext()).enabled) {
-                    await appendPresetImages(message, images);
+                    await appendPresetImageLayout(message, layout);
                 }
             } catch (error) {
                 console.error('[Preset Prompt Images] Failed to append preset images.', error);
-                toastError('Preset images could not be appended to the request. Text prompt will still be sent.');
+                toastError(translateText('Preset images could not be appended to the request. Text prompt will still be sent.'));
             } finally {
-                delete prompt.presetPromptImages;
+                delete prompt.presetPromptImageLayout;
             }
         }
         return message;
@@ -101,7 +101,7 @@ function installPromptManagerImportPatch(PromptManager: any): void {
             const existingImageIds = getAllImageIdentifiers(this?.serviceSettings);
             const overlap = incomingIds.filter((identifier: string) => existingImageIds.has(identifier));
             if (overlap.length > 0) {
-                toastWarning(`Imported prompt list touches ${overlap.length} identifier(s) that already have preset images. PromptManager import/export does not carry extensions.tauritavern.presetPromptImages; use the full Chat Completion preset JSON to preserve images.`);
+                toastWarning(t`Imported prompt list touches ${overlap.length} identifier(s) that already have preset images. PromptManager import/export does not carry extensions.tauritavern.presetPromptImages; use the full Chat Completion preset JSON to preserve images.`);
             }
         } catch (error) {
             console.error('[Preset Prompt Images] Failed to inspect PromptManager import.', error);
@@ -122,7 +122,7 @@ function installPromptManagerExportClickWarning(oaiSettings: any): void {
         }
         try {
             if (hasAnyImages(oaiSettings)) {
-                toastWarning('PromptManager import/export only handles prompts and prompt_order. Preset prompt images live in extensions.tauritavern.presetPromptImages; use the full Chat Completion preset export/import to preserve them.');
+                toastWarning(translateText('PromptManager import/export only handles prompts and prompt_order. Preset prompt images live in extensions.tauritavern.presetPromptImages; use the full Chat Completion preset export/import to preserve them.'));
             }
         } catch (error) {
             console.error('[Preset Prompt Images] Failed to inspect PromptManager export/import state.', error);
