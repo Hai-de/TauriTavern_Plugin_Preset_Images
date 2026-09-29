@@ -1,0 +1,9 @@
+{
+    "name": "tauritavern-plugin-preset-images",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "watch": "tsc -p tsconfig.json --watch"
+    }
+}

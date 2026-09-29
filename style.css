@@ -1,0 +1,136 @@
+.tt-preset-image-settings .tt-preset-image-settings-help {
+    opacity: 0.75;
+    font-size: 0.9em;
+    margin: 4px 0 8px;
+}
+
+.tt-preset-image-settings-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+    align-items: center;
+}
+
+.tt-preset-image-editor {
+    margin-top: 12px;
+    border-top: 1px solid var(--SmartThemeBorderColor, #444);
+    padding-top: 10px;
+}
+
+.tt-preset-image-editor__header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    align-items: baseline;
+    margin-bottom: 6px;
+}
+
+.tt-preset-image-editor__hint {
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+.tt-preset-image-editor__dropzone {
+    border: 1px dashed var(--SmartThemeBorderColor, #666);
+    border-radius: 6px;
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.tt-preset-image-editor__dropzone:hover,
+.tt-preset-image-editor__dropzone.drag-over {
+    border-color: var(--SmartThemeQuoteColor, #4aa3ff);
+    background: rgba(74, 163, 255, 0.08);
+}
+
+.tt-preset-image-editor__dropzone.disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.tt-preset-image-editor__notice {
+    font-size: 0.85em;
+    color: var(--SmartThemeWarningColor, #e6a23c);
+    margin-top: 6px;
+    min-height: 1em;
+}
+
+.tt-preset-image-editor__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.tt-preset-image-editor__empty {
+    opacity: 0.7;
+    font-size: 0.9em;
+    padding: 6px 0;
+}
+
+.tt-preset-image-card {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 6px;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.tt-preset-image-card__preview {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex: 0 0 auto;
+    background: #111;
+}
+
+.tt-preset-image-card__meta {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) auto auto auto;
+    gap: 6px;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.tt-preset-image-card__name {
+    font-size: 0.9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tt-preset-image-card__size {
+    font-size: 0.8em;
+    opacity: 0.75;
+}
+
+.tt-preset-image-card__select {
+    width: auto;
+    min-width: 92px;
+}
+
+.tt-preset-image-card__remove {
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .tt-preset-image-card {
+        align-items: flex-start;
+    }
+
+    .tt-preset-image-card__meta {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .tt-preset-image-card__name,
+    .tt-preset-image-card__size {
+        grid-column: 1 / -1;
+    }
+}
