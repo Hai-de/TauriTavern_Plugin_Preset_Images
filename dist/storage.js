@@ -1,4 +1,4 @@
-import { LEGACY_STORE_VERSION, MIB, STORE_FIELD, STORE_NAMESPACE, STORE_VERSION } from './constants.js';
+import { MIB, STORE_FIELD, STORE_NAMESPACE, STORE_VERSION } from './constants.js';
 import { isPlainObject } from './types.js';
 export function createLayout() {
     return { before: [], after: [] };
@@ -52,17 +52,7 @@ function normalizeLayoutItems(rawItems) {
         return items;
     }
     for (const [identifier, rawLayout] of Object.entries(rawItems)) {
-        if (typeof identifier !== 'string' || identifier.length === 0) {
-            continue;
-        }
-        if (Array.isArray(rawLayout)) {
-            const layout = migrateLegacyImages(rawLayout);
-            if (layout.before.length || layout.after.length) {
-                items[identifier] = layout;
-            }
-            continue;
-        }
-        if (!isPlainObject(rawLayout)) {
+        if (typeof identifier !== 'string' || identifier.length === 0 || !isPlainObject(rawLayout)) {
             continue;
         }
         const before = Array.isArray(rawLayout.before)
@@ -77,57 +67,20 @@ function normalizeLayoutItems(rawItems) {
     }
     return items;
 }
-function migrateLegacyImages(images) {
-    const layout = createLayout();
-    for (const raw of images) {
-        const image = normalizeImage(raw);
-        if (!image) {
-            continue;
-        }
-        const position = raw?.position === 'before' ? 'before' : 'after';
-        layout[position].push(image);
-    }
-    return layout;
-}
-function readRawStore(settings) {
-    return settings?.extensions?.[STORE_NAMESPACE]?.[STORE_FIELD];
-}
 export function readStore(settings) {
-    const raw = readRawStore(settings);
+    const raw = settings?.extensions?.[STORE_NAMESPACE]?.[STORE_FIELD];
     if (!isPlainObject(raw)) {
         return createStore();
     }
-    const version = Number(raw.version ?? LEGACY_STORE_VERSION);
-    if (version !== STORE_VERSION && version !== LEGACY_STORE_VERSION) {
-        console.warn(`[Preset Prompt Images] Unsupported preset image schema version: ${version}`);
+    const version = Number(raw.version);
+    if (version !== STORE_VERSION) {
+        console.warn(`[Preset Prompt Images] Unsupported preset image schema version: ${raw.version}`);
         return createStore();
     }
     return {
         version: STORE_VERSION,
         items: normalizeLayoutItems(raw.items),
     };
-}
-export function migrateStoreInPlace(settings) {
-    const raw = readRawStore(settings);
-    if (!isPlainObject(raw)) {
-        return false;
-    }
-    const version = Number(raw.version ?? LEGACY_STORE_VERSION);
-    if (version === STORE_VERSION) {
-        return false;
-    }
-    if (version !== LEGACY_STORE_VERSION) {
-        console.warn(`[Preset Prompt Images] Refusing to migrate unsupported preset image schema version: ${version}`);
-        return false;
-    }
-    const migrated = readStore(settings);
-    const hadItems = isPlainObject(raw.items) && Object.keys(raw.items).length > 0;
-    if (!Object.keys(migrated.items).length && hadItems) {
-        console.warn('[Preset Prompt Images] Legacy store contained no recognizable image data; keeping legacy data untouched.');
-        return false;
-    }
-    writeStore(settings, migrated);
-    return true;
 }
 export function writeStore(settings, store) {
     settings.extensions ??= {};

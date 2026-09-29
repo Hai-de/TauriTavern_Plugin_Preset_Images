@@ -59,9 +59,6 @@
     opacity: 0.6;
 }
 
-.tt-preset-image-editor__add-button {
-    white-space: nowrap;
-}
 
 .tt-preset-image-editor__list {
     display: flex;

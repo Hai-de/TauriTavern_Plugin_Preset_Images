@@ -1,6 +1,4 @@
 export type ImageDetail = 'auto' | 'low' | 'high' | 'original';
-export type ImagePosition = 'before' | 'after';
-
 export interface PresetImage {
     id: string;
     dataUrl: string;
@@ -8,10 +6,6 @@ export interface PresetImage {
     mime?: string;
     bytes?: number;
     detail?: ImageDetail;
-}
-
-export interface LegacyPresetImage extends PresetImage {
-    position?: ImagePosition;
 }
 
 export interface PresetPromptImageLayout {

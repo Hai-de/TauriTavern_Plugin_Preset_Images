@@ -1,5 +1,4 @@
-import { migrateStoreInPlace, readStore } from './storage.js';
-import { persistStore } from './persistence.js';
+import { readStore } from './storage.js';
 import { loadPluginSettings, setPluginEnabled } from './settings.js';
 import { getRuntimeContext, translateText, toastError, toastWarning } from './runtime.js';
 let installed = false;
@@ -18,9 +17,6 @@ export function installPresetEvents() {
     eventSource.on(eventTypes.OAI_PRESET_IMPORT_READY, async (eventData) => {
         try {
             const preset = eventData?.data;
-            if (migrateStoreInPlace(preset)) {
-                console.info('[Preset Prompt Images] Migrated legacy v1 preset image data to v2.');
-            }
             const store = readStore(preset);
             if (Object.keys(store.items).length === 0) {
                 return;
@@ -44,18 +40,4 @@ export function installPresetEvents() {
             toastError(translateText('Failed to inspect imported preset images. The preset will still be imported.'));
         }
     });
-    if (eventTypes.OAI_PRESET_CHANGED_AFTER) {
-        eventSource.on(eventTypes.OAI_PRESET_CHANGED_AFTER, async () => {
-            try {
-                const settings = context.chatCompletionSettings ?? context.extensionSettings;
-                if (settings && migrateStoreInPlace(settings)) {
-                    console.info('[Preset Prompt Images] Migrated legacy v1 preset image data to v2.');
-                    await persistStore(settings, readStore(settings));
-                }
-            }
-            catch (error) {
-                console.error('[Preset Prompt Images] Failed to migrate loaded preset image data.', error);
-            }
-        });
-    }
 }

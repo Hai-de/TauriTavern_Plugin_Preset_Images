@@ -132,13 +132,6 @@ function buildAddRow(eligible: boolean): HTMLDivElement {
     row.className = 'tt-preset-image-editor__add-row';
     row.append(buildDropZone(eligible));
 
-    const addButton = document.createElement('button');
-    addButton.type = 'button';
-    addButton.className = 'menu_button tt-preset-image-editor__add-button';
-    addButton.textContent = translateText('Add images');
-    addButton.disabled = !eligible;
-    row.append(addButton);
-
     const input = document.createElement('input');
     input.id = 'tt-preset-image-file';
     input.type = 'file';
@@ -148,7 +141,6 @@ function buildAddRow(eligible: boolean): HTMLDivElement {
     row.append(input);
 
     if (eligible) {
-        addButton.addEventListener('click', () => input.click());
         input.addEventListener('change', () => {
             const files = Array.from(input.files ?? []);
             input.value = '';
