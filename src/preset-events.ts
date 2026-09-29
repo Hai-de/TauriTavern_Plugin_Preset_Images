@@ -1,5 +1,5 @@
 import { readStore } from './storage.js';
-import { loadPluginSettings, setPluginEnabled } from './settings.js';
+import { getPluginSettings, renderSettingsPanel, updatePluginSettings } from './settings.js';
 import { getRuntimeContext, translateText, toastError, toastWarning } from './runtime.js';
 
 let installed = false;
@@ -26,7 +26,7 @@ export function installPresetEvents(): void {
                 return;
             }
 
-            const pluginSettings = loadPluginSettings(context);
+            const pluginSettings = getPluginSettings();
             if (pluginSettings.enabled) {
                 return;
             }
@@ -42,7 +42,8 @@ export function installPresetEvents(): void {
                 translateText('This preset contains prompt images, but the plugin is disabled. Enable preset prompt images for this installation?'),
             );
             if (shouldEnable) {
-                setPluginEnabled(true);
+                updatePluginSettings({ enabled: true });
+                renderSettingsPanel(context);
             }
         } catch (error) {
             console.error('[Preset Prompt Images] Failed to handle preset import.', error);

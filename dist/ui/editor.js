@@ -1,5 +1,6 @@
 import { collectImageLimitWarnings, createImageId, estimateDataUrlBytes, fileToDataUrl, getLayout, readStore, setLayout, } from '../storage.js';
-import { loadPluginSettings } from '../settings.js';
+import { isEligiblePrompt } from '../eligibility.js';
+import { getPluginSettings } from '../settings.js';
 import { t, translateText, toastError, toastWarning } from '../runtime.js';
 import { persistStore } from '../persistence.js';
 let currentPromptManager = null;
@@ -12,12 +13,6 @@ function getPromptIdentifier() {
 }
 function getServiceSettings() {
     return currentPromptManager?.serviceSettings;
-}
-function isEligiblePrompt(prompt) {
-    if (!prompt || prompt.marker === true) {
-        return false;
-    }
-    return Number(prompt.injection_position ?? 0) === 0;
 }
 function getLayoutState() {
     return getLayout(getServiceSettings(), getPromptIdentifier());
@@ -57,7 +52,7 @@ function buildEditorHeader(eligible) {
     hint.className = 'tt-preset-image-editor__hint';
     hint.textContent = eligible
         ? translateText('Drag, paste, or select images. They are embedded into the preset JSON.')
-        : translateText('Only non-marker Relative prompts can send images. Existing data is kept but will not be sent.');
+        : translateText('Only non-marker, non-Global-Prompt Relative prompts can send images. Existing data is kept but will not be sent.');
     header.append(hint);
     return header;
 }
@@ -240,7 +235,7 @@ function buildReplaceInput(bucket, image) {
     return input;
 }
 function buildImageCard(image, bucket, index) {
-    const settings = loadPluginSettings();
+    const settings = getPluginSettings();
     const card = document.createElement('div');
     card.className = 'tt-preset-image-card';
     card.dataset.imageId = image.id;
@@ -405,7 +400,7 @@ function clearDropIndicators() {
 }
 function appendFileToBucket(files, bucket) {
     if (!currentPromptEligible) {
-        toastWarning(translateText('Only non-marker Relative prompts can send images. Existing data is kept but will not be sent.'));
+        toastWarning(translateText('Only non-marker, non-Global-Prompt Relative prompts can send images. Existing data is kept but will not be sent.'));
         return;
     }
     const layout = getLayoutState();
@@ -510,7 +505,7 @@ function buildTextAnchorDropTarget(anchor, layout) {
     });
 }
 function warnAboutLimits(store = currentPromptManager ? readStore(currentPromptManager.serviceSettings) : { version: 2, items: {} }) {
-    const settings = loadPluginSettings();
+    const settings = getPluginSettings();
     const warnings = collectImageLimitWarnings(store, settings);
     for (const warning of warnings) {
         if (warning.kind === 'image' && warning.image) {
@@ -537,6 +532,13 @@ function renderEditor() {
     }
     const sourcePrompt = currentPromptManager.getPromptById(identifier) ?? currentPrompt;
     const eligible = isEligiblePrompt(sourcePrompt);
+    const pluginSettings = getPluginSettings();
+    if (!pluginSettings.enabled && pluginSettings.hideUiWhenDisabled) {
+        currentPromptEligible = false;
+        clearChildren(shell);
+        shell.hidden = true;
+        return;
+    }
     currentPromptEligible = eligible;
     const layout = getLayoutState();
     const promptContent = String(sourcePrompt?.content ?? '');
@@ -575,7 +577,17 @@ export function renderPromptImageEditor(promptManager, prompt) {
     currentPrompt = prompt;
     renderEditor();
 }
+let editorInstalled = false;
 export function installPromptImageEditor() {
+    if (editorInstalled) {
+        return;
+    }
+    editorInstalled = true;
+    window.addEventListener('tt-preset-images-settings-changed', () => {
+        if (currentPromptManager && currentPrompt) {
+            renderEditor();
+        }
+    });
     document.addEventListener('paste', event => {
         if (!editorShell || editorShell.offsetParent === null) {
             return;

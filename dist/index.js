@@ -1,6 +1,7 @@
 import { installRuntimePatches } from './patches.js';
 import { installPresetEvents } from './preset-events.js';
-import { renderSettingsPanel } from './settings.js';
+import { initializePluginSettings, renderSettingsPanel } from './settings.js';
+import { initializeIdleTimer } from './idle-timer.js';
 import { installPromptImageEditor } from './ui/editor.js';
 import { getRuntimeContext } from './runtime.js';
 let activated = false;
@@ -11,10 +12,12 @@ async function activate() {
     activated = true;
     try {
         const context = getRuntimeContext();
+        await initializePluginSettings(context);
         renderSettingsPanel(context);
         await installRuntimePatches();
         installPresetEvents();
         installPromptImageEditor();
+        initializeIdleTimer();
         console.info('[Preset Prompt Images] Activated');
     }
     catch (error) {

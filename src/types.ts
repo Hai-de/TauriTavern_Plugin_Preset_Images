@@ -20,8 +20,13 @@ export interface PresetPromptImagesStore {
 
 export interface PluginSettings {
     enabled: boolean;
+    hideUiWhenDisabled: boolean;
     showPositionSelect: boolean;
     showMoveButtons: boolean;
+    idleDisableEnabled: boolean;
+    idleDisableMinutes: number;
+    idleCountdownSeconds: number;
+    useTauriTavernStore: boolean;
     warnMaxImageMiB: number;
     warnMaxImagesPerPrompt: number;
     warnMaxTotalMiB: number;

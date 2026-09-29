@@ -18,8 +18,12 @@ extensions.tauritavern.presetPromptImages
 - 支持单文件替换、删除、`detail: auto / low / high / original`。
 - 支持简体中文、繁体中文、日语和英语 UI。
 - 可选显示位置下拉框和上移/下移按钮。
+- 只允许非 marker、非 Global Prompt 的 Relative 提示词条目发送图片。
 - 支持完整预设 JSON 导入导出时保留图片。
-- 插件总开关关闭后不发送任何图片。
+- 插件总开关关闭后不发送任何图片；可选隐藏相关 UI。
+- 可选把插件全局配置存放到 TauriTavern extension store，避免写入 settings.json。
+- 可选配置无操作定时器，超时后禁用扩展自身。
+- 高级设置中提供卸载插件按钮，需要二次确认。
 - 没有安装插件时，预设仍可按纯文本方式正常导入和使用。
 - 支持普通 Chat Completion 组装与 Agent/headless PromptManager 组装路径。
 

@@ -1,18 +1,12 @@
 import { appendPresetImageLayout } from './message-content.js';
 import { installMultimodalSquashPatch } from './squash.js';
 import { getAllImageIdentifiers, getLayout, hasAnyImages } from './storage.js';
-import { loadPluginSettings } from './settings.js';
+import { isEligiblePrompt } from './eligibility.js';
+import { getPluginSettings } from './settings.js';
 import { getRuntimeContext, t, translateText, toastError, toastWarning } from './runtime.js';
 import { renderPromptImageEditor } from './ui/editor.js';
 
 let installed = false;
-
-function isEligiblePrompt(prompt: any): boolean {
-    if (!prompt || prompt.marker === true) {
-        return false;
-    }
-    return Number(prompt.injection_position ?? 0) === 0;
-}
 
 function installPreparePromptPatch(PromptManager: any): void {
     const prototype = PromptManager.prototype as any;
@@ -24,7 +18,7 @@ function installPreparePromptPatch(PromptManager: any): void {
     prototype.preparePrompt = function patchedPreparePrompt(this: any, prompt: any, originalArg?: any): any {
         const prepared = original.call(this, prompt, originalArg);
         try {
-            const pluginSettings = loadPluginSettings(getRuntimeContext());
+            const pluginSettings = getPluginSettings();
             if (pluginSettings.enabled && prepared?.identifier) {
                 const source = this?.serviceSettings?.prompts?.find?.((item: any) => item?.identifier === prepared.identifier) ?? prompt;
                 if (isEligiblePrompt(source)) {
@@ -53,7 +47,7 @@ function installMessageFromPromptPatch(Message: any): void {
         const layout = prompt?.presetPromptImageLayout;
         if (layout?.before?.length || layout?.after?.length) {
             try {
-                if (loadPluginSettings(getRuntimeContext()).enabled) {
+                if (getPluginSettings().enabled) {
                     await appendPresetImageLayout(message, layout);
                 }
             } catch (error) {

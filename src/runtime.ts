@@ -1,4 +1,3 @@
-import { EXTENSION_NAME } from './constants.js';
 import type { RuntimeContext } from './types.js';
 
 export function getRuntimeContext(): RuntimeContext {
@@ -7,16 +6,6 @@ export function getRuntimeContext(): RuntimeContext {
         throw new Error('SillyTavern context is not available');
     }
     return context;
-}
-
-export function getExtensionSettings(context: RuntimeContext = getRuntimeContext()): Record<string, any> {
-    context.extensionSettings ??= {};
-    context.extensionSettings[EXTENSION_NAME] ??= {};
-    return context.extensionSettings[EXTENSION_NAME];
-}
-
-export function saveExtensionSettings(context: RuntimeContext = getRuntimeContext()): void {
-    context.saveSettingsDebounced?.();
 }
 
 
