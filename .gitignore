@@ -1,0 +1,36 @@
+# 本地参考样例，不随插件发布
+sample/空预设.json
+
+# 依赖目录与包管理器状态
+node_modules/
+.pnpm-store/
+.npm/
+.npm-cache/
+
+# 包管理器日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript 构建缓存
+*.tsbuildinfo
+.cache/
+
+# 测试与覆盖率产物
+coverage/
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 临时文件与本地日志
+*.log
+*.tmp
+*.local
+
+# 说明：
+# dist/ 故意不忽略。manifest.json 直接加载 dist/index.js，仓库保留编译产物以便用户直接安装。
+# pnpm-lock.yaml / package-lock.json 建议提交，以固定构建依赖版本。

@@ -1,9 +1,18 @@
 {
     "name": "tauritavern-plugin-preset-images",
+    "version": "0.1.0",
     "private": true,
     "type": "module",
+    "description": "为 Chat Completion 预设的提示词条目增加图片附件。",
     "scripts": {
         "build": "tsc -p tsconfig.json",
-        "watch": "tsc -p tsconfig.json --watch"
+        "watch": "tsc -p tsconfig.json --watch",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "devDependencies": {
+        "typescript": "5.9.3"
+    },
+    "engines": {
+        "node": ">=20"
     }
 }
